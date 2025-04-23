@@ -1,20 +1,13 @@
 #!/usr/bin/env bun
 
-/*
-DO NOT REMOVE THIS COMMENT BLOCK
-Refactored script to update a clergy roster via Discord commands and Playwright forum editing.
-*/
-
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import { Client, GatewayIntentBits, Partials, Events } from 'discord.js';
 import { chromium } from 'playwright';
-import dotenv from 'dotenv';
+import '@dotenvx/dotenvx/config';
 // NEVER CHANGE THIS LINE: cheerio's ES module import is broken in upstream package
 const cheerio = require('cheerio');
-
-dotenv.config();
 
 // --- Configuration ---
 const {
@@ -1046,26 +1039,47 @@ class PlaywrightService {
                 await this.page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
                 // Check for permission error / need to login *after* navigation
-                const permissionErrorVisible = await this.page.locator('body:has-text("Error loading data: You do not have permission")').isVisible({ timeout: 5000 }); // Short timeout for check
+                const logoutIndicatorLocator = this.page.locator(".alert.alert-danger").filter({
+                      hasText: "Error loading data: You do not have permission to view this",
+                });
 
-                if (permissionErrorVisible) {
+                try {
+                    // Attempt to wait for the permission error element
+                    console.log("[DEBUG] Checking for permission error element visibility...");
+                    await logoutIndicatorLocator.waitFor({ state: 'visible', timeout: 10000 });
+
+                    // --- If waitFor SUCCEEDS ---
+                    // This means the permission error *is* visible. User is not logged in or lacks permissions.
                     console.log("[INFO] Permission error detected. Attempting login...");
                     await this._performLogin();
+
                     // After login, re-navigate to the target URL
                     console.log(`[INFO] Re-navigating to target URL after login: ${targetUrl}`);
                     await this.page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-                    // Verify login by checking for permission error again
-                    const permissionErrorAfterLogin = await this.page.locator('body:has-text("Error loading data: You do not have permission")').isVisible({ timeout: 5000 });
-                     if (permissionErrorAfterLogin) {
-                         throw new Error("Login appeared successful, but still lack permission to view the thread.");
-                     }
-                     console.log("[INFO] Navigation successful after login.");
-                     return; // Logged in and navigated successfully
+                    // Verify login by checking for permission error again (quick check)
+                    // Use isVisible for a quick check now, assuming login fixed it.
+                    const permissionErrorAfterLogin = await logoutIndicatorLocator.isVisible({ timeout: 5000 });
+                    if (permissionErrorAfterLogin) {
+                        throw new Error("Login appeared successful, but still lack permission to view the thread.");
+                    }
+                    console.log("[INFO] Navigation successful after login.");
+                    return; // Logged in and navigated successfully
 
-                } else {
-                    console.log("[INFO] Forum thread loaded successfully (no permission error detected).");
-                    return; // Already logged in or public thread
+                } catch (error) {
+                    // --- If waitFor FAILS ---
+                    // Check if it's the expected timeout error from Playwright
+                    if (error.name === 'TimeoutError') {
+                        // This means the permission error element did NOT appear within the timeout.
+                        // Assume the user is logged in and has permission.
+                        console.log("[INFO] Permission error element not found within timeout. Assuming logged in and permitted.");
+                        console.log("[INFO] Forum thread loaded successfully.");
+                        return; // Already logged in or public thread
+                    } else {
+                        // Unexpected error during waitFor (not a timeout)
+                        console.error("[ERROR] Unexpected error while checking for permission element:", error);
+                        throw error; // Re-throw unexpected errors
+                    }
                 }
             } catch (error) {
                  console.error(`[ERROR] Navigation/Login attempt ${attempt} failed:`, error);
@@ -1086,14 +1100,20 @@ class PlaywrightService {
         await this.page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
 
         console.log("[INFO] Clicking 'Login with your Guildtag Account' button (if exists)...");
-         // Use a selector that works even if it's not a <button>
-         const guildtagLoginButton = this.page.locator(':text("Login with your Guildtag Account")').first();
-         if (await guildtagLoginButton.isVisible()) {
-             await guildtagLoginButton.click();
-             await this.page.waitForLoadState('domcontentloaded'); // Wait for potential page change
-         } else {
-             console.log("[INFO] 'Login with Guildtag Account' button not found, assuming direct login form.");
-         }
+        // Use a specific button selector with a filter for the text
+        const guildtagLoginButton = this.page.locator('button').filter({ hasText: "Login with your Guildtag Account" }).first();
+        try {
+            await guildtagLoginButton.waitFor({ state: 'visible', timeout: 5000 });
+            await guildtagLoginButton.click();
+            await this.page.waitForLoadState('domcontentloaded'); // Wait for potential page change
+        } catch (error) {
+            if (error.name === 'TimeoutError') {
+                console.log("[INFO] 'Login with Guildtag Account' button not found, assuming direct login form.");
+            } else {
+                console.error("[ERROR] Unexpected error while waiting for Guildtag login button:", error);
+                throw error;
+            }
+        }
 
 
         console.log("[INFO] Filling login credentials...");
@@ -1317,15 +1337,15 @@ class DiscordService {
     }
 
      // Fetches messages back in time until one with *any* reaction is found.
-     // Returns messages *without* reactions, ordered oldest to newest.
+     // Returns messages *newer* than the first reacted message found, ordered newest to oldest.
      async fetchUnprocessedMessages() {
         if (!this.targetChannel) throw new Error("Discord client not ready or channel not found.");
 
-        console.log(`[INFO] Fetching message history in #${this.targetChannel.name} to find unprocessed commands...`);
-        let unprocessedMessages = [];
+        console.log(`[INFO] Fetching message history in #${this.targetChannel.name} to find unprocessed commands (newest first)...`);
+        let unprocessedMessages = []; // Will store messages newest to oldest
         let lastMessageId = null;
         let foundReactedMessage = false;
-        const fetchLimit = 100; // Discord API limit per fetch
+        const fetchLimit = 100;
         let fetchedCount = 0;
         const maxTotalFetch = 1000; // Safety limit
 
@@ -1333,41 +1353,37 @@ class DiscordService {
              while (!foundReactedMessage && fetchedCount < maxTotalFetch) {
                  const options = { limit: fetchLimit };
                  if (lastMessageId) {
-                     options.before = lastMessageId;
+                     options.before = lastMessageId; // Fetch messages older than the oldest in the previous batch
                  }
 
                  const messages = await this.targetChannel.messages.fetch(options);
                  fetchedCount += messages.size;
 
                  if (messages.size === 0) {
-                     console.log("[DEBUG] Reached end of message history.");
+                     console.log("[DEBUG] Reached end of message history or beginning of channel.");
                      break; // No more messages
                  }
 
-                 console.log(`[DEBUG] Fetched batch of ${messages.size} messages (total fetched: ${fetchedCount}).`);
-                 lastMessageId = messages.lastKey(); // ID of the oldest message in this batch
+                 console.log(`[DEBUG] Fetched batch of ${messages.size} messages (total fetched: ${fetchedCount}). Processing newest to oldest in batch.`);
+                 lastMessageId = messages.lastKey(); // Oldest message ID in this batch, used for next fetch if needed
 
-                 // Process messages oldest to newest within the batch for correct stopping logic
-                 const sortedMessages = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
-                 for (const message of sortedMessages) {
+                 // Messages are fetched newest to oldest by default. Iterate in that order.
+                 for (const message of messages.values()) {
                      if (message.author.bot) continue; // Skip bot messages
 
-                     // Check if message has any reactions. Use fetch to be sure for uncached reactions.
-                     // Note: Checking cache first is faster, but might miss reactions on older messages.
-                     // Fetching reactions can be slow if done for every message. Compromise: check cache size.
+                     // Check cache for reactions. Stop *searching* history if a reacted message is found.
                      if (message.reactions.cache.size > 0) {
-                         console.log(`[DEBUG] Found message [${message.id}] with reaction(s) in cache. Stopping history fetch.`);
+                         console.log(`[DEBUG] Found reacted message [${message.id}]. Stopping history scan.`);
                          foundReactedMessage = true;
-                         break; // Stop processing this batch and stop fetching more history
+                         break; // Stop processing this batch and stop fetching older messages
                      } else {
-                          // Add message to list IF it has no reactions in cache.
-                          // It will be processed, and potentially reacted to later.
-                          console.log(`[DEBUG] Adding unreacted message [${message.id}] to processing batch.`);
-                         unprocessedMessages.push(message);
+                         // If no reaction found AND we haven't already found the boundary reacted message,
+                         // this message is considered unprocessed.
+                         console.log(`[DEBUG] Adding unreacted message [${message.id}] to processing batch.`);
+                         unprocessedMessages.push(message); // Add to end for now
                      }
-                 }
-             } // End while loop
+                 } // End for loop iterating through batch
+             } // End while loop fetching batches
 
              if (fetchedCount >= maxTotalFetch) {
                  console.warn(`[WARN] Reached fetch limit (${maxTotalFetch}) without finding a reacted message. Processing the ${unprocessedMessages.length} found so far.`);
@@ -1378,9 +1394,11 @@ class DiscordService {
             // Return whatever was collected, or handle error appropriately
         }
 
-         console.log(`[INFO] Found ${unprocessedMessages.length} potentially unprocessed messages (no reactions in cache).`);
-         // Return messages ordered oldest to newest for sequential processing
-         return unprocessedMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+         // Reverse the collected messages so the newest is first
+         unprocessedMessages.reverse();
+
+         console.log(`[INFO] Found ${unprocessedMessages.length} potentially unprocessed messages (newer than the first found reacted message), ordered newest to oldest.`);
+         return unprocessedMessages; // Return newest to oldest
      }
 
 
@@ -1459,8 +1477,9 @@ class RosterBot {
         // Fetch historical messages and trigger processing if needed
         const unprocessedMessages = await this.discordService.fetchUnprocessedMessages();
         if (unprocessedMessages.length > 0) {
-            console.log(`[INFO] Enqueuing ${unprocessedMessages.length} historical messages for processing.`);
-            this.messageQueue.push(...unprocessedMessages); // Add historical messages to the queue
+            console.log(`[INFO] Enqueuing ${unprocessedMessages.length} historical messages for processing (newest first).`);
+            // Add them to the FRONT of the queue, preserving newest-first order
+            this.messageQueue.unshift(...unprocessedMessages);
             this._triggerProcessing(); // Start processing the queue
         } else {
             console.log("[INFO] No unprocessed historical messages found.");
@@ -1470,8 +1489,8 @@ class RosterBot {
 
     // Called whenever a new message arrives in the monitored channel
     handleIncomingMessage(message) {
-        console.log(`[INFO] Queuing new message ${message.id} for processing.`);
-        this.messageQueue.push(message);
+        console.log(`[INFO] Queuing new message ${message.id} for processing (adding to front).`);
+        this.messageQueue.unshift(message); // Add new messages to the FRONT
         this._triggerProcessing(); // Attempt to process the queue
     }
 
