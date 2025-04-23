@@ -1,0 +1,9 @@
+.env.keys
+.env.test
+.env.prod
+bun.lockb
+changes-*.txt
+*.patch
+roster*
+*.html
+node_modules/
