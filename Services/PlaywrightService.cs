@@ -368,6 +368,6 @@ public class PlaywrightService : IAsyncDisposable
     /// <returns>A Playwright Locator.</returns>
     private ILocator CreateLocatorForText(string text)
     {
-        return _page.Locator($"text={text}");
+        return _page?.Locator($"text={text}") ?? throw new Exception("Page is not initialized.");
     }
 } 

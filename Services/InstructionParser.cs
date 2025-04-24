@@ -148,7 +148,7 @@ public class InstructionParser
              else
              {
                 _logger.LogWarning("Line parsed down to only a name: \"{Name}\". Could be invalid, comment, or ambiguous removal.", parseResult.Name);
-                return new Instruction(InstructionType.Error, "Only name found after parsing, ambiguous instruction", originalLine);
+                return new Instruction(InstructionType.Error, "Ambiguous instruction", originalLine);
              }
         }
 
