@@ -5,7 +5,7 @@
 bun.lockb
 changes-*.txt
 *.patch
-roster*
+roster*.html
 *.html
 node_modules/
 clergy-roster-backups/
