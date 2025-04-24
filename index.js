@@ -1464,6 +1464,12 @@ class DiscordService {
                  for (const message of messages.values()) {
                      if (message.author.bot) continue; // Skip bot messages
 
+                     // Skip messages that start with 'ignore' (case-insensitive, ignoring leading whitespace)
+                     if (typeof message.content === 'string' && message.content.trimStart().toLowerCase().startsWith('ignore')) {
+                         console.log(`[DEBUG] Skipping message [${message.id}] because it starts with 'ignore'.`);
+                         continue;
+                     }
+
                      // Check cache for reactions. Stop *searching* history if a reacted message is found.
                      if (message.reactions.cache.size > 0) {
                          console.log(`[DEBUG] Found reacted message [${message.id}]. Stopping history scan.`);
@@ -1663,20 +1669,36 @@ class RosterBot {
             const instructionsToApply = [];
             const results = { success: [], failure: [] }; // Track individual message outcomes
 
-            // Parse all messages in the batch
+            // Parse all messages in the batch (multi-line support)
             for (const message of messagesToProcess) {
-                const parsed = parseInstruction(message.content);
-                 if (parsed.type === 'error') {
-                     console.log(`[WARN] Failed parsing message ${message.id}: ${parsed.reason} - "${parsed.originalLine}"`);
-                     results.failure.push({ message: message, reason: parsed.reason });
-                 } else if (parsed.type !== 'ignore') {
-                     instructionsToApply.push(parsed);
-                     // Mark as success for now, reaction depends on whether changes are made
-                     results.success.push(message);
-                 } else {
-                      // Ignored messages don't need reactions (comments, quest starts)
-                      console.log(`[DEBUG] Ignored message ${message.id}: ${parsed.reason}`);
-                 }
+                const lines = (message.content || '').split(/\r?\n/);
+                if (lines.length === 0) continue;
+                // Check if first line starts with 'ignore' (case-insensitive, after trimming)
+                if (lines[0].trim().toLowerCase().startsWith('ignore')) {
+                    console.log(`[DEBUG] Skipping message ${message.id} because first line starts with 'ignore'.`);
+                    continue;
+                }
+                let messageHadError = false;
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue; // skip empty lines
+                    const parsed = parseInstruction(line);
+                    if (parsed.type === 'error') {
+                        console.log(`[WARN] Failed parsing message ${message.id} (line ${i+1}): ${parsed.reason} - "${parsed.originalLine}"`);
+                        results.failure.push({ message: message, reason: parsed.reason });
+                        messageHadError = true;
+                        break; // Stop processing further lines in this message
+                    } else if (parsed.type !== 'ignore') {
+                        instructionsToApply.push(parsed);
+                    } else {
+                        // Ignored lines don't need reactions (comments, quest starts)
+                        console.log(`[DEBUG] Ignored line in message ${message.id}: ${parsed.reason}`);
+                    }
+                }
+                if (!messageHadError) {
+                    // Only mark as success if all lines were valid or ignored
+                    results.success.push(message);
+                }
             }
 
             // Apply valid instructions if any exist
@@ -1754,8 +1776,7 @@ class RosterBot {
              } else if (!changesMade) {
                  console.log("[INFO] Skipping file saving diff indication as no changes were made to the forum post.");
              }
-            // Ensure browser is closed after processing the batch
-            await this.playwrightService.close();
+            // Do NOT close the browser here; keep it open for the process lifetime
             this.processingLock = false; // Release lock
             console.log("--- Finished processing batch ---");
         }
@@ -1764,10 +1785,11 @@ class RosterBot {
 
 
 // --- Entry Point ---
+let globalBot = null; // Store bot instance for shutdown
 async function main() {
     console.log("Starting Clergy Roster Bot...");
-    const bot = new RosterBot();
-    await bot.run(); // Start the bot (connects Discord, sets up listeners)
+    globalBot = new RosterBot();
+    await globalBot.run(); // Start the bot (connects Discord, sets up listeners)
     console.log("Bot run() method finished. Process should stay alive listening for Discord events.");
      // Keep process alive (though Discord client should do this)
      // process.stdin.resume(); // Keep Node.js process alive
@@ -1776,11 +1798,16 @@ async function main() {
 // Graceful shutdown handling
 process.on('SIGINT', async () => {
   console.log('\n[INFO] SIGINT received. Shutting down...');
-  // Add cleanup here if needed (e.g., close Playwright if open, logout Discord client)
+  if (globalBot && globalBot.playwrightService) {
+    await globalBot.playwrightService.close();
+  }
   process.exit(0);
 });
 process.on('SIGTERM', async () => {
   console.log('[INFO] SIGTERM received. Shutting down...');
+  if (globalBot && globalBot.playwrightService) {
+    await globalBot.playwrightService.close();
+  }
   process.exit(0);
 });
 
