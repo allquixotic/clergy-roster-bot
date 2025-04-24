@@ -5,8 +5,10 @@ namespace ClergyRosterBot.Utilities;
 public static partial class StringExtensions
 {
     private static readonly Regex LothMarkerRegex = GenerateLothMarkerRegex();
-    private const string LothHtmlEntity = "&#42;"; // Note the missing semicolon in original JS; assuming it should be there.
+    private const string LothHtmlEntity = "&#42;"; // HTML entity for the asterisk used as LOTH marker.
     private const string LothHtmlEntityWithSpace = " &#42;";
+    private const string LothMarker = "(LOTH)";
+    private static readonly Regex HtmlTagRegex = new Regex("<.*?>", RegexOptions.Compiled);
 
     /// <summary>
     /// Normalizes a name by removing HTML tags, LOTH markers, and trimming.
@@ -109,6 +111,30 @@ public static partial class StringExtensions
         }
 
         return bestDist <= maxDistanceThreshold ? bestMatch : null;
+    }
+
+    /// <summary>
+    /// Appends the LOTH marker (an asterisk HTML entity) to the name if needed.
+    /// </summary>
+    public static string EnsureLothMarker(this string name, bool isLoth)
+    {
+        // Note: The original implementation used "&#42;" without a semicolon.
+        // Standard HTML entities usually have a semicolon. We'll add it for correctness.
+        bool hasMarker = name.Contains(LothHtmlEntity, StringComparison.OrdinalIgnoreCase) ||
+                         name.Contains(LothMarker, StringComparison.OrdinalIgnoreCase);
+
+        if (isLoth && !hasMarker)
+        {
+            return name + LothHtmlEntity;
+        }
+        else if (!isLoth && hasMarker)
+        {
+            return name.Replace(LothHtmlEntity, string.Empty);
+        }
+        else
+        {
+            return name;
+        }
     }
 
     [GeneratedRegex(@"\s*(\(LOTH\)|\*|&#42;)\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

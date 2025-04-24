@@ -2,9 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) <!-- Assuming same license -->
 
-A Discord bot and automation tool for managing the clergy roster of an Elder Scrolls Online (ESO) guild, using natural-language commands in Discord to update a forum post containing a complex HTML table. This is a C#/.NET 9 port of the original JavaScript/Bun version.
-
-**Original Project home:** https://github.com/allquixotic/clergy-roster-bot
+A Discord bot and automation tool for managing the clergy roster of an Elder Scrolls Online (ESO) guild, using natural-language commands in Discord to update a forum post containing a complex HTML table. Built with C#/.NET 9.
 
 ---
 
@@ -35,25 +33,70 @@ Create a `.env` file in the project's output directory (e.g., `clergy-roster-csh
 
 ```env
 # .env file format
-BotSettings__DiscordBotToken=your_discord_bot_token
-BotSettings__DiscordChannelId=your_channel_id
-BotSettings__GuildtagForumUrl=https://your.guildtag.com/forum/thread/12345
-BotSettings__GuildtagEmail=your_guildtag_email
-BotSettings__GuildtagPassword=your_guildtag_password
+DISCORD_BOT_TOKEN=your_discord_bot_token
+DISCORD_CHANNEL_ID=your_channel_id
+GUILDTAG_FORUM_URL=https://your.guildtag.com/forum/thread/12345
+GUILDTAG_EMAIL=your_guildtag_email
+GUILDTAG_PASSWORD=your_guildtag_password
+# Optional:
+SUPPRESS_ERROR_FEEDBACK=1   # Set to 1 to suppress error feedback in Discord
+BACKUPS_DIRECTORY=clergy-roster-backups
 ```
 
-**Note:** Environment variables will override values in the `.env` file.
+**Note:** Environment variables will override values in the `.env` file. The variable names above match those used by the application at runtime.
 
-### Building and Running the Bot
+---
+
+### Using dotenvx for Encrypted Environment Variables
+
+You can use [dotenvx](https://dotenvx.com/) to encrypt your `.env` files for safer sharing and storage. This is highly recommended for teams or when storing secrets in version control.
+
+#### Install dotenvx
+
+- macOS: `brew install dotenvx/brew/dotenvx`
+- Linux: `curl -sfS https://dotenvx.sh | sh`
+- Windows: `winget install dotenvx`
+
+#### Encrypt your .env file
+
+```bash
+# In your project directory
+dotenvx encrypt
+```
+This will:
+- Encrypt all secrets in `.env`
+- Add a `DOTENV_PUBLIC_KEY` to your `.env`
+- Create a `.env.keys` file with your private decryption key (do NOT commit `.env.keys` to source control)
+
+#### Running the Bot with dotenvx (Development)
+
+```bash
+dotenvx run -- dotnet run
+```
+This will decrypt your `.env` at runtime using the key in `.env.keys`.
+
+#### Running the Bot with dotenvx (Production)
+
+In production, do **not** include `.env.keys`. Instead, set the private key as an environment variable:
+
+```bash
+DOTENV_PRIVATE_KEY="your_private_key" dotenvx run -- dotnet run
+```
+
+---
+
+## Building and Running the Bot
 
 ```bash
 cd clergy-roster-csharp
+# (Recommended) Use dotenvx for secrets:
+dotenvx run -- dotnet run -c Release
+# Or, if not using dotenvx:
 dotnet build
-dotnet run
+dotnet run -c Release
 ```
 
-On the first run, Playwright will attempt to download the necessary browser binaries.
-The bot will connect to Discord, monitor the specified channel, and process new and historical messages for roster updates.
+On the first run, Playwright will attempt to download the necessary browser binaries. The bot will connect to Discord, monitor the specified channel, and process new and historical messages for roster updates.
 
 ---
 
@@ -107,4 +150,4 @@ This project is not affiliated with ZeniMax Online Studios, Guildtag, or Discord
 
 ---
 
-**Project home:** (Link to the new C# repo once created) 
+**Project home:** https://github.com/allquixotic/clergy-roster-bot

@@ -70,7 +70,7 @@ public class PlaywrightService : IAsyncDisposable
             "Editor textarea did not appear. Check editor loading behavior.");
 
         _logger.LogInformation("Extracting content from textarea...");
-        await Task.Delay(1000); // Short delay as in original code
+        await Task.Delay(100); // Small delay
         string content = await textarea.InputValueAsync(new LocatorInputValueOptions { Timeout = 10000 });
 
         _isEditorOpen = true;
@@ -195,13 +195,11 @@ public class PlaywrightService : IAsyncDisposable
         await _page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
         _logger.LogInformation("Filling login credentials...");
-        // Use the combined selector from JS (' + input, input') to find the input
-        // either immediately following the label or nested within it.
+        // Find the input either immediately following the label or nested within it.
         await _page.Locator(LOCATOR_LABEL_EMAIL).Locator(" + input, input").First.FillAsync(_settings.GuildtagEmail);
         await _page.Locator(LOCATOR_LABEL_PASSWORD).Locator(" + input, input").First.FillAsync(_settings.GuildtagPassword);
 
         _logger.LogInformation("Clicking Login button...");
-        // Regex needs conversion:
         var loginButton = _page.Locator(LOCATOR_LOGIN_BUTTON, new PageLocatorOptions { HasTextRegex = new System.Text.RegularExpressions.Regex("^Login\\s*$") });
         await AwaitVisibleAndClickAsync(loginButton, 5000,
             "Login button not found or not clickable. Fatal error during login process.");
@@ -361,5 +359,15 @@ public class PlaywrightService : IAsyncDisposable
         }
         _playwright?.Dispose();
          _logger.LogInformation("Playwright disposed.");
+    }
+
+    /// <summary>
+    /// Creates a Playwright Locator for an element containing the specified text, case-insensitively.
+    /// </summary>
+    /// <param name="text">The text to search for.</param>
+    /// <returns>A Playwright Locator.</returns>
+    private ILocator CreateLocatorForText(string text)
+    {
+        return _page.Locator($"text={text}");
     }
 } 
