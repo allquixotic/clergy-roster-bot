@@ -1,32 +1,41 @@
 using ClergyRosterBot;
+using ClergyRosterBot.Models;
 using ClergyRosterBot.Services;
-using DotNetEnv;
+using ClergyRosterBot.Utilities;
+using ClergyRosterBot.Workers;
+using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Reflection;
+using System;
 
-// Load .env file
-Env.Load();
-
-HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
 // Configure logging
 builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
+builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace); // Log everything to console
+builder.Logging.SetMinimumLevel(LogLevel.Debug); // Set overall minimum level
 
 // Configure settings
 builder.Services.AddOptions<BotSettings>()
-    .Bind(builder.Configuration.GetSection("BotSettings"))
+    .Configure(settings =>
+    {
+        settings.DiscordBotToken = Environment.GetEnvironmentVariable("DISCORD_BOT_TOKEN") ?? throw new InvalidOperationException("DISCORD_BOT_TOKEN is not set.");
+        settings.DiscordChannelId = ulong.Parse(Environment.GetEnvironmentVariable("DISCORD_CHANNEL_ID") ?? throw new InvalidOperationException("DISCORD_CHANNEL_ID is not set."));
+        settings.GuildtagForumUrl = Environment.GetEnvironmentVariable("GUILDTAG_FORUM_URL") ?? throw new InvalidOperationException("GUILDTAG_FORUM_URL is not set.");
+        settings.GuildtagEmail = Environment.GetEnvironmentVariable("GUILDTAG_EMAIL") ?? throw new InvalidOperationException("GUILDTAG_EMAIL is not set.");
+        settings.GuildtagPassword = Environment.GetEnvironmentVariable("GUILDTAG_PASSWORD") ?? throw new InvalidOperationException("GUILDTAG_PASSWORD is not set.");
+        // Optional: Suppress error feedback (replies/reactions) if env var is "1"
+        settings.SuppressErrorFeedback = Environment.GetEnvironmentVariable("SUPPRESS_ERROR_FEEDBACK") == "1";
+    })
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-// Load configuration from environment variables (after .env is loaded)
-// Environment variables override .env file values.
-// Prefix needs to match how variables are named, e.g., BotSettings__DiscordBotToken
-builder.Configuration.AddEnvironmentVariables(prefix: "BotSettings__");
-
 // Register services
 builder.Services.AddSingleton<DiscordService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordService>());
 builder.Services.AddSingleton<PlaywrightService>();
 builder.Services.AddTransient<RosterState>(); // Use Transient for RosterState
 builder.Services.AddSingleton<InstructionParser>();

@@ -46,7 +46,7 @@ public class InstructionParser
                 !string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogDebug("Parsed RENAME: \"{OldName}\" => \"{NewName}\"", oldName, newName);
-                return new Instruction(InstructionType.Rename, originalLine) { OldName = oldName, NewName = newName };
+                return new Instruction(InstructionType.Rename, null, originalLine) { OldName = oldName, NewName = newName };
             }
             else
             {
@@ -63,7 +63,7 @@ public class InstructionParser
             if (!string.IsNullOrEmpty(name))
             {
                 _logger.LogDebug("Parsed LOTH REMOVE: \"{Name}\"", name);
-                return new Instruction(InstructionType.UpdateLOTH, originalLine) { CharacterName = name, MakeLOTH = false };
+                return new Instruction(InstructionType.UpdateLOTH, null, originalLine) { CharacterName = name, MakeLOTH = false };
             }
         }
 
@@ -74,7 +74,7 @@ public class InstructionParser
             if (!string.IsNullOrEmpty(name))
             {
                 _logger.LogDebug("Parsed LOTH ADD: \"{Name}\"", name);
-                return new Instruction(InstructionType.UpdateLOTH, originalLine) { CharacterName = name, MakeLOTH = true };
+                return new Instruction(InstructionType.UpdateLOTH, null, originalLine) { CharacterName = name, MakeLOTH = true };
             }
         }
 
@@ -84,7 +84,7 @@ public class InstructionParser
             if (!string.IsNullOrEmpty(nameToRemove))
             {
                 _logger.LogDebug("Parsed REMOVE: \"{NameToRemove}\"", nameToRemove);
-                return new Instruction(InstructionType.Remove, originalLine) { CharacterName = nameToRemove };
+                return new Instruction(InstructionType.Remove, null, originalLine) { CharacterName = nameToRemove };
             }
             else
             {
@@ -114,7 +114,7 @@ public class InstructionParser
             {
                 _logger.LogDebug("Parsed SET HIGH PRIEST: \"{Name}\" ({Title}), LOTH: {IsLOTH}", name, title, isLOTH);
                 // Use TargetRank to store the title for SetHighPriest type
-                return new Instruction(InstructionType.SetHighPriest, originalLine)
+                return new Instruction(InstructionType.SetHighPriest, null, originalLine)
                     { CharacterName = name, TargetRank = title, IsLOTH = isLOTH };
             }
         }
@@ -132,7 +132,7 @@ public class InstructionParser
             }
              _logger.LogDebug("Parsed ADD/MOVE: Name=\"{Name}\", Rank=\"{Rank}\", Divine=\"{Divine}\", LOTH={IsLOTH}",
                               parseResult.Name, parseResult.Rank, parseResult.Divine, isLOTH);
-            return new Instruction(InstructionType.Add, originalLine)
+            return new Instruction(InstructionType.Add, null, originalLine)
             {
                 CharacterName = parseResult.Name,
                 TargetRank = parseResult.Rank,

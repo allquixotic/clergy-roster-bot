@@ -195,9 +195,10 @@ public class PlaywrightService : IAsyncDisposable
         await _page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
         _logger.LogInformation("Filling login credentials...");
-        // Need to adapt selector logic from JS (' + input, input')
-        await _page.Locator(LOCATOR_LABEL_EMAIL).Locator("input").First.FillAsync(_settings.GuildtagEmail);
-        await _page.Locator(LOCATOR_LABEL_PASSWORD).Locator("input").First.FillAsync(_settings.GuildtagPassword);
+        // Use the combined selector from JS (' + input, input') to find the input
+        // either immediately following the label or nested within it.
+        await _page.Locator(LOCATOR_LABEL_EMAIL).Locator(" + input, input").First.FillAsync(_settings.GuildtagEmail);
+        await _page.Locator(LOCATOR_LABEL_PASSWORD).Locator(" + input, input").First.FillAsync(_settings.GuildtagPassword);
 
         _logger.LogInformation("Clicking Login button...");
         // Regex needs conversion:

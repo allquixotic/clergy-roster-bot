@@ -13,8 +13,12 @@ public class DiscordService : IHostedService
     private readonly BotSettings _settings;
     private readonly DiscordSocketClient _client;
     private readonly IServiceProvider _serviceProvider; // To create worker scope later if needed
+    private readonly TaskCompletionSource _readyTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public event Func<SocketMessage, Task>? MessageReceived;
+
+    // Expose a Task that completes when the client is ready
+    public Task Ready => _readyTcs.Task;
 
     public DiscordService(
         ILogger<DiscordService> logger,
@@ -45,13 +49,16 @@ public class DiscordService : IHostedService
         _logger.LogInformation("Starting Discord Service...");
         try
         {
+            _logger.LogInformation("Attempting to log in to Discord...");
             await _client.LoginAsync(TokenType.Bot, _settings.DiscordBotToken);
+            _logger.LogInformation("Discord login successful. Attempting to start connection...");
             await _client.StartAsync();
-            _logger.LogInformation("Discord Service started successfully.");
+            // ReadyAsync will log the successful connection
+            _logger.LogInformation("Discord connection process initiated."); // Note: Doesn't mean it's fully 'Ready' yet, ReadyAsync confirms that.
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Failed to start Discord service.");
+            _logger.LogCritical(ex, "Failed during Discord service startup (Login or Start).");
             // Optionally trigger application shutdown
             var lifetime = _serviceProvider.GetRequiredService<IHostApplicationLifetime>();
             lifetime.StopApplication();
@@ -84,6 +91,8 @@ public class DiscordService : IHostedService
     private Task ReadyAsync()
     {
         _logger.LogInformation($"Discord bot connected as {_client.CurrentUser.Username}#{_client.CurrentUser.Discriminator}");
+        // Signal that the client is ready
+        _readyTcs.TrySetResult();
         // Trigger initial fetch or other ready actions here if needed
         return Task.CompletedTask;
     }
@@ -119,14 +128,28 @@ public class DiscordService : IHostedService
                 await ReplyToMessageAsync(message.Id, "An internal error occurred while processing your command.");
             }
         }
+        else
+        {
+            _logger.LogWarning("MessageReceived event handler is null, message {MessageId} not processed further by worker.", message.Id);
+        }
     }
 
     public async Task<IEnumerable<IMessage>> FetchUnprocessedMessagesAsync()
     {
         _logger.LogInformation("Fetching unprocessed messages...");
-        if (_client.GetChannel(_settings.DiscordChannelId) is not ITextChannel channel)
+        // Get the channel first to provide better diagnostics
+        var rawChannel = _client.GetChannel(_settings.DiscordChannelId);
+
+        if (rawChannel == null)
         {
-            _logger.LogError("Target channel {ChannelId} not found or is not a text channel.", _settings.DiscordChannelId);
+            _logger.LogError("Target channel {ChannelId} not found. Ensure the bot is in the guild and the ID is correct.", _settings.DiscordChannelId);
+            return Enumerable.Empty<IMessage>();
+        }
+
+        // Now check if it's the correct type
+        if (rawChannel is not IMessageChannel channel)
+        {
+            _logger.LogError("Target channel {ChannelId} was found, but it is not a message channel. It is a '{ChannelType}'. Please provide the ID of a text channel.", _settings.DiscordChannelId, rawChannel.GetType().Name);
             return Enumerable.Empty<IMessage>();
         }
 
@@ -141,7 +164,10 @@ public class DiscordService : IHostedService
         {
             while (!foundReactedMessage && fetchedCount < maxTotalFetch)
             {
-                var messagesBatch = await channel.GetMessagesAsync(lastMessageId, Direction.Before, fetchLimit).FlattenAsync();
+                var messagesBatch = lastMessageId.HasValue
+                    ? await channel.GetMessagesAsync(lastMessageId.Value, Direction.Before, fetchLimit, CacheMode.AllowDownload).FlattenAsync()
+                    : await channel.GetMessagesAsync(fetchLimit, CacheMode.AllowDownload).FlattenAsync();
+
                 var currentBatch = messagesBatch.ToList(); // Consume the async enumerable
 
                 fetchedCount += currentBatch.Count;
@@ -256,8 +282,15 @@ public class DiscordService : IHostedService
                 _logger.LogWarning("Cannot reply, message {MessageId} not found.", messageId);
                 return;
             }
-            await message.ReplyAsync(content, allowedMentions: AllowedMentions.None); // Don't ping
-            // _logger.LogDebug("Replied to message {MessageId}", messageId);
+            if (message is IUserMessage userMessage)
+            {
+                await userMessage.ReplyAsync(content, allowedMentions: AllowedMentions.None); // Don't ping
+                // _logger.LogDebug("Replied to message {MessageId}", messageId);
+            }
+            else
+            {
+                _logger.LogWarning("Cannot reply to message {MessageId} as it is not a user message.", messageId);
+            }
         }
         catch (Discord.Net.HttpException httpEx) when (httpEx.HttpCode == System.Net.HttpStatusCode.NotFound) // 10008 Unknown Message
         {
