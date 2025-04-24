@@ -8,3 +8,5 @@ changes-*.txt
 roster*
 *.html
 node_modules/
+clergy-roster-backups/
+*.png

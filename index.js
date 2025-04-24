@@ -43,6 +43,21 @@ const KNOWN_RANKS = [
 ];
 // Ranks expected within the table cells for direct manipulation
 const BASE_RANKS = ["Priest", "Curate", "Prior", "Acolyte"];
+const LOCATOR_ALERT_DANGER = ".alert.alert-danger";
+const LOCATOR_GUILDTAG_LOGIN_BUTTON = 'button';
+const LOCATOR_GUILDTAG_LOGIN_BUTTON_TEXT = 'Login with your Guildtag Account';
+const LOCATOR_LABEL_EMAIL = 'label:has-text("Email")';
+const LOCATOR_LABEL_PASSWORD = 'label:has-text("Password")';
+const LOCATOR_LOGIN_BUTTON = '.widget-login .card-footer button.btn-primary';
+const LOCATOR_LOGIN_BUTTON_TEXT = /^Login\s*$/;
+const LOCATOR_LOGIN_FORM = 'form[action*="login"]';
+const LOCATOR_ERROR_VISIBLE = '.error:visible, .message.error:visible, [data-message-type="error"]:visible';
+const LOCATOR_EDIT_LINK = 'a:has-text("Edit"):not(:has-text("Edit Thread")), button:has-text("Edit"):not(:has-text("Edit Thread")), a[data-action="edit"]:not(:has-text("Edit Thread"))';
+const LOCATOR_EDITOR_TEXTAREA = '#compose-container > div:nth-child(2) > div.row > div > div > div.form-group > textarea';
+const LOCATOR_FORM_TEXTAREA = 'textarea.form-text.form-control';
+const LOCATOR_SAVE_BUTTON = 'button.btn-primary.bk:has-text("Save Edit")';
+const LOCATOR_INPUT_AFTER_LABEL = ' + input, input';
+
 
 // --- Utility Functions ---
 function levenshtein(a, b) {
@@ -105,6 +120,81 @@ function normalizeNameForComparison(n) {
 function matchesName(existingName, newName) {
     // Use normalized comparison
     return normalizeNameForComparison(existingName) === normalizeNameForComparison(newName);
+}
+
+/**
+ * Waits for a Playwright Locator to become visible, with flexible error handling.
+ * @param {import('playwright').Locator} locator - The Playwright Locator to wait for.
+ * @param {Object} [options]
+ * @param {number} [options.timeout=5000] - Timeout in milliseconds.
+ * @param {boolean} [options.shouldThrow=true] - Whether to throw on timeout (default: true).
+ * @param {string} [options.errorMessage] - Custom error message to print if throwing.
+ * @returns {Promise<boolean>} - Returns true if visible, false only if shouldThrow is false and a TimeoutError occurs.
+ */
+async function waitForVisible(locator, { timeout = 5000, shouldThrow = true, errorMessage } = {}) {
+    try {
+        await locator.waitFor({ state: 'visible', timeout });
+        return true;
+    } catch (error) {
+        if (error.name === 'TimeoutError') {
+            if (shouldThrow) {
+                if (errorMessage) {
+                    console.error(errorMessage);
+                }
+                throw error;
+            } else {
+                return false;
+            }
+        }
+        // For any other error, always re-throw
+        throw error;
+    }
+}
+
+/**
+ * Generic utility: Waits for a locator to become visible, then performs an action (click, fill, etc). Handles errors with a custom message.
+ * @param {import('playwright').Locator} locator
+ * @param {'click'|'fill'|'none'} action - Action to perform after visible
+ * @param {any} value - Value to use for 'fill' action
+ * @param {Object} [options]
+ * @param {number} [options.timeout=5000]
+ * @param {boolean} [options.shouldThrow=true]
+ * @param {string} [errorMessage]
+ */
+async function awaitVisibleAndAct(locator, action = 'none', value = undefined, { timeout = 5000, shouldThrow = true } = {}, errorMessage = "Failed to act on element") {
+    try {
+        await waitForVisible(locator, { timeout, shouldThrow });
+        if (action === 'click') {
+            await locator.click();
+        } else if (action === 'fill') {
+            await locator.fill(value);
+        }
+        // 'none' does nothing after visible
+    } catch (error) {
+        console.error(`[ERROR] ${errorMessage}:`, error);
+        throw new Error(errorMessage);
+    }
+}
+
+/**
+ * Waits for a locator to become visible, then clicks it. Throws with a custom error message if any step fails.
+ */
+async function awaitVisibleAndClick(locator, options = {}, errorMessage = "Failed to click element") {
+    return awaitVisibleAndAct(locator, 'click', undefined, options, errorMessage);
+}
+
+/**
+ * Waits for a locator to become visible, then fills it with the given value. Throws with a custom error message if any step fails.
+ */
+async function awaitVisibleAndFill(locator, value, options = {}, errorMessage = "Failed to fill element") {
+    return awaitVisibleAndAct(locator, 'fill', value, options, errorMessage);
+}
+
+/**
+ * Waits for a locator to become visible, throws with a custom error message if it fails.
+ */
+async function awaitVisibleWithError(locator, options = {}, errorMessage = "Element did not become visible") {
+    return awaitVisibleAndAct(locator, 'none', undefined, options, errorMessage);
 }
 
 // --- Roster Processing Logic ---
@@ -1039,14 +1129,14 @@ class PlaywrightService {
                 await this.page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
                 // Check for permission error / need to login *after* navigation
-                const logoutIndicatorLocator = this.page.locator(".alert.alert-danger").filter({
+                const logoutIndicatorLocator = this.page.locator(LOCATOR_ALERT_DANGER).filter({
                       hasText: "Error loading data: You do not have permission to view this",
                 });
 
                 try {
                     // Attempt to wait for the permission error element
                     console.log("[DEBUG] Checking for permission error element visibility...");
-                    await logoutIndicatorLocator.waitFor({ state: 'visible', timeout: 10000 });
+                    const foundPermissionError = await waitForVisible(logoutIndicatorLocator, { timeout: 10000, shouldThrow: true });
 
                     // --- If waitFor SUCCEEDS ---
                     // This means the permission error *is* visible. User is not logged in or lacks permissions.
@@ -1059,8 +1149,8 @@ class PlaywrightService {
 
                     // Verify login by checking for permission error again (quick check)
                     // Use isVisible for a quick check now, assuming login fixed it.
-                    const permissionErrorAfterLogin = await logoutIndicatorLocator.isVisible({ timeout: 5000 });
-                    if (permissionErrorAfterLogin) {
+                    const permissionErrorAfterLogin = !(await waitForVisible(logoutIndicatorLocator, { timeout: 5000, shouldThrow: false }));
+                    if (!permissionErrorAfterLogin) {
                         throw new Error("Login appeared successful, but still lack permission to view the thread.");
                     }
                     console.log("[INFO] Navigation successful after login.");
@@ -1101,94 +1191,97 @@ class PlaywrightService {
 
         console.log("[INFO] Clicking 'Login with your Guildtag Account' button (if exists)...");
         // Use a specific button selector with a filter for the text
-        const guildtagLoginButton = this.page.locator('button').filter({ hasText: "Login with your Guildtag Account" }).first();
-        try {
-            await guildtagLoginButton.waitFor({ state: 'visible', timeout: 5000 });
-            await guildtagLoginButton.click();
-            await this.page.waitForLoadState('domcontentloaded'); // Wait for potential page change
-        } catch (error) {
-            if (error.name === 'TimeoutError') {
-                console.log("[INFO] 'Login with Guildtag Account' button not found, assuming direct login form.");
-            } else {
-                console.error("[ERROR] Unexpected error while waiting for Guildtag login button:", error);
-                throw error;
-            }
-        }
+        const guildtagLoginButton = this.page.locator(LOCATOR_GUILDTAG_LOGIN_BUTTON).filter({ hasText: LOCATOR_GUILDTAG_LOGIN_BUTTON_TEXT }).first();
+        await awaitVisibleAndClick(
+            guildtagLoginButton,
+            { timeout: 5000, shouldThrow: true },
+            "Unexpected error while waiting for Guildtag login button"
+        );
+        await this.page.waitForLoadState('domcontentloaded'); // Wait for potential page change
 
 
         console.log("[INFO] Filling login credentials...");
         // Robust selectors using associated labels
-        await this.page.locator('label:has-text("Email")').locator(' + input, input').first().fill(this.config.email);
-        await this.page.locator('label:has-text("Password")').locator(' + input, input').first().fill(this.config.password);
+        await this.page.locator(LOCATOR_LABEL_EMAIL).locator(LOCATOR_INPUT_AFTER_LABEL).first().fill(this.config.email);
+        await this.page.locator(LOCATOR_LABEL_PASSWORD).locator(LOCATOR_INPUT_AFTER_LABEL).first().fill(this.config.password);
 
         console.log("[INFO] Clicking Login button...");
-         // Common login button texts
-         await this.page.locator('button:has-text("Login"), button:has-text("Sign In"), input[type="submit"][value="Login"], input[type="submit"][value="Sign In"]').first().click();
+        // Use a robust selector for the Login button in the card-footer of the login form
+        const loginButton = this.page.locator(LOCATOR_LOGIN_BUTTON, { hasText: LOCATOR_LOGIN_BUTTON_TEXT });
+        await awaitVisibleAndClick(
+            loginButton,
+            { timeout: 5000, shouldThrow: true },
+            "Login button not found or not clickable. Fatal error during login process."
+        );
 
         console.log("[INFO] Waiting for navigation/confirmation after login...");
         try {
-             // Wait until URL changes OR a known element on the logged-in page appears
-             await this.page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15000 });
-             console.log(`[INFO] Login likely successful. Current URL: ${this.page.url()}`);
+            // Wait for either the login form to disappear or a known post-login element to appear
+            // Here, we wait for the URL to change away from /login or for the absence of the login form
+            await this.page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15000 });
+            // Optionally, check for absence of the login form
+            const stillOnLogin = !(await waitForVisible(this.page.locator(LOCATOR_LOGIN_FORM), { timeout: 5000, shouldThrow: false }));
+            if (!stillOnLogin) {
+                console.error("[FATAL] Still on login form after attempting login. Login failed.");
+                throw new Error("Login failed: Still on login form after submitting credentials.");
+            }
+            // Optionally, check for permission error after login
+            const permissionError = this.page.locator(LOCATOR_ALERT_DANGER).filter({ hasText: "Error loading data: You do not have permission to view this" });
+            const permissionErrorVisible = await waitForVisible(permissionError, { timeout: 2000, shouldThrow: false });
+            if (permissionErrorVisible) {
+                console.error("[FATAL] Permission error still present after login. Login failed.");
+                throw new Error("Login failed: Permission error still present after login.");
+            }
+            console.log(`[INFO] Login successful. Current URL: ${this.page.url()}`);
         } catch (e) {
-            // Check if login failed explicitly
-            const loginError = this.page.locator('.error:visible, .message.error:visible, [data-message-type="error"]:visible');
+            // Check for explicit login error messages
+            const loginError = this.page.locator(LOCATOR_ERROR_VISIBLE);
             if (await loginError.count() > 0) {
-                 const errorText = await loginError.first().textContent();
-                 console.error(`[ERROR] Login failed with error: ${errorText}`);
-                 throw new Error(`Login failed: ${errorText}`);
+                const errorText = await loginError.first().textContent();
+                console.error(`[FATAL] Login failed with error: ${errorText}`);
+                throw new Error(`Login failed: ${errorText}`);
             } else {
-                 console.warn("[WARN] Timeout waiting for URL change after login, but no explicit error found. Proceeding cautiously.");
-                 // Potentially add check for expected element on successful login page
+                console.error("[FATAL] Timeout or unknown error after attempting login. Automation will stop.", e);
+                throw new Error("Login failed: Timeout or unknown error after attempting login.");
             }
         }
     }
 
     async getForumPostContentAndOpenEditor() {
-        if (this.isEditorOpen) {
-            console.log("[DEBUG] Editor already open, retrieving content...");
-             const textarea = this.page.locator('textarea').first(); // Assume editor state persists
-             if (!(await textarea.isVisible())) {
-                 console.warn("[WARN] Editor was marked open, but textarea not found. Re-opening.");
-                 this.isEditorOpen = false; // Force reopen
-             } else {
-                 return await textarea.inputValue();
-             }
-        }
-
         await this._ensureLoggedInAndNavigated(this.config.forumUrl);
 
         // Find and click the Edit link/button
         console.log("[INFO] Clicking 'Edit' link/button...");
         // Use a broader selector for edit links/buttons
-        const editLink = this.page.locator('a:has-text("Edit"), button:has-text("Edit"), a[data-action="edit"]').first();
-        try {
-            await editLink.waitFor({ state: 'visible', timeout: 10000 });
-            await editLink.click();
-        } catch (error) {
-             console.error("[ERROR] Could not find or click the 'Edit' link/button.", error);
-             const pageContent = await this.page.content();
-             console.error("[DEBUG] Page source (first 500 chars):", pageContent.slice(0,500));
-             throw new Error("Could not find the 'Edit' link/button. Check selector and permissions.");
-        }
+        const editLink = this.page.locator(LOCATOR_EDIT_LINK).first();
+        await awaitVisibleAndClick(
+            editLink,
+            { timeout: 10000, shouldThrow: true },
+            "Could not find or click the 'Edit' link/button. Check selector and permissions."
+        );
+        console.log("[INFO] Clicked 'Edit' link/button.");
 
 
         // Wait for the editor textarea to appear
         console.log("[INFO] Waiting for editor textarea...");
-        // Use a common selector for rich text editors or plain textareas
-        const textarea = this.page.locator('textarea, .wysiwyg-editor textarea').first();
-        try {
-            await textarea.waitFor({ state: 'visible', timeout: 15000 });
-        } catch (error) {
-             console.error("[ERROR] Editor textarea did not become visible after clicking Edit.", error);
-              const pageContent = await this.page.content();
-             console.error("[DEBUG] Page source after clicking edit (first 500 chars):", pageContent.slice(0,500));
-             throw new Error("Editor textarea did not appear. Check editor loading behavior.");
-        }
-
+        // Use a robust selector for the forum post editor textarea
+        const textarea = this.page.locator(LOCATOR_EDITOR_TEXTAREA).first();
+        await awaitVisibleWithError(
+            textarea,
+            { timeout: 15000, shouldThrow: true },
+            "Editor textarea did not appear. Check editor loading behavior."
+        );
 
         console.log("[INFO] Extracting content from textarea...");
-        const content = await textarea.inputValue();
+        await this.page.waitForTimeout(1000);
+        let content = '';
+        try {
+            await waitForVisible(textarea, { timeout: 10000, shouldThrow: true });
+            content = await textarea.inputValue();
+        } catch (error) {
+            console.error("[ERROR] Could not extract content from textarea: not visible.", error);
+            throw new Error("Textarea not visible when extracting content.");
+        }
         this.isEditorOpen = true; // Mark editor as open
         console.log(`[DEBUG] Extracted ${content?.length || 0} characters from textarea.`);
         return content;
@@ -1200,24 +1293,24 @@ class PlaywrightService {
         }
 
         console.log("[INFO] Updating textarea content...");
-        const textarea = this.page.locator('textarea, .wysiwyg-editor textarea').first();
-         if (!(await textarea.isVisible())) {
-             throw new Error("Textarea element disappeared before update.");
-         }
-        await textarea.fill(newContent); // Fill replaces existing content
+        const textarea = this.page.locator(LOCATOR_FORM_TEXTAREA).first();
+        await awaitVisibleAndFill(
+            textarea,
+            newContent,
+            { timeout: 10000, shouldThrow: true },
+            "Textarea element disappeared before update."
+        );
         console.log(`[DEBUG] Filled textarea with ${newContent.length} characters.`);
 
         // Find and click the Save button
         console.log("[INFO] Clicking 'Save Edit' button...");
         // Common save button selectors
-        const saveButton = this.page.locator('button:has-text("Save"), button:has-text("Save Edit"), input[type="submit"][value="Save"], input[type="submit"][value="Save Changes"]').first();
-        try {
-            await saveButton.waitFor({ state: 'visible', timeout: 5000 });
-            await saveButton.click();
-        } catch (error) {
-             console.error("[ERROR] Could not find or click the 'Save Edit' button.", error);
-             throw new Error("Could not find or click the 'Save Edit' button. Check selector.");
-        }
+        const saveButton = this.page.locator(LOCATOR_SAVE_BUTTON).first();
+        await awaitVisibleAndClick(
+            saveButton,
+            { timeout: 5000, shouldThrow: true },
+            "Could not find or click the 'Save Edit' button. Check selector."
+        );
 
         // Wait for save confirmation (e.g., URL change, success message)
         console.log("[INFO] Waiting for save confirmation...");
@@ -1230,7 +1323,7 @@ class PlaywrightService {
         } catch(error) {
              console.warn("[WARN] Timeout waiting for URL change after save. Edit might have saved, but confirmation unclear.", error);
               // Check for error messages on page?
-             const saveError = this.page.locator('.error:visible, .message.error:visible, [data-message-type="error"]:visible');
+             const saveError = this.page.locator(LOCATOR_ERROR_VISIBLE);
               if (await saveError.count() > 0) {
                   const errorText = await saveError.first().textContent();
                   console.error(`[ERROR] Save failed with error message: ${errorText}`);
@@ -1394,11 +1487,11 @@ class DiscordService {
             // Return whatever was collected, or handle error appropriately
         }
 
-         // Reverse the collected messages so the newest is first
+         // Reverse the collected messages so the oldest is first
          unprocessedMessages.reverse();
 
-         console.log(`[INFO] Found ${unprocessedMessages.length} potentially unprocessed messages (newer than the first found reacted message), ordered newest to oldest.`);
-         return unprocessedMessages; // Return newest to oldest
+         console.log(`[INFO] Found ${unprocessedMessages.length} potentially unprocessed messages (newer than the first found reacted message), ordered oldest to newest.`);
+         return unprocessedMessages; // Return oldest to newest
      }
 
 
@@ -1624,15 +1717,37 @@ class RosterBot {
 
         } catch (error) {
             console.error("[FATAL] Unrecoverable error during batch processing:", error);
+            // --- Enhancement: Take screenshot on fatal Playwright error ---
+            let fatalPlaywrightError = false;
+            try {
+                if (this.playwrightService && this.playwrightService.page) {
+                    await this.playwrightService.page.screenshot({ path: 'debug.png' });
+                    console.error('[DEBUG] Screenshot taken to debug.png due to fatal error.');
+                }
+                // Heuristic: If error message mentions Playwright, login, or browser/page is open, treat as Playwright error
+                if (
+                    (error && error.message &&
+                        (/playwright|login|browser|page|timeout|not clickable|not found|permission/i).test(error.message)) ||
+                    (this.playwrightService && this.playwrightService.page)
+                ) {
+                    fatalPlaywrightError = true;
+                }
+            } catch (screenshotError) {
+                console.error('[ERROR] Failed to take screenshot on fatal error:', screenshotError);
+            }
             // Attempt to notify Discord about the failure for this batch
-             const firstMessageId = messagesToProcess[0]?.id;
-             if (firstMessageId) {
-                 await this.discordService.replyToMessage(firstMessageId, `An unexpected error occurred while processing the batch: ${error.message}. Some commands may not have been applied.`).catch(e => console.error("Failed to send batch error reply:", e));
-                 // React with error to all messages in the failed batch?
-                 for(const msg of messagesToProcess) {
-                     await this.discordService.reactToMessage(msg.id, '❌').catch(()=>{}); // Fire and forget reaction
-                 }
-             }
+            const firstMessageId = messagesToProcess[0]?.id;
+            if (firstMessageId) {
+                await this.discordService.replyToMessage(firstMessageId, `An unexpected error occurred while processing the batch: ${error.message}. Some commands may not have been applied.`).catch(e => console.error("Failed to send batch error reply:", e));
+                // Only react with ❌ if NOT a fatal Playwright error
+                if (!fatalPlaywrightError) {
+                    for(const msg of messagesToProcess) {
+                        await this.discordService.reactToMessage(msg.id, '❌').catch(()=>{}); // Fire and forget reaction
+                    }
+                } else {
+                    console.error('[INFO] Skipping ❌ emoji reactions due to fatal Playwright automation error.');
+                }
+            }
         } finally {
              if (changesMade && originalFile && updatedFile && originalFile !== updatedFile) {
                  console.log(`[INFO] Original and updated content saved to:\n  - ${originalFile}\n  - ${updatedFile}`);
