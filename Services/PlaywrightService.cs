@@ -24,7 +24,7 @@ public class PlaywrightService : IAsyncDisposable
     private const string LOCATOR_LOGIN_BUTTON_TEXT = "/^Login\\s*$/"; // Regex needs C# handling
     private const string LOCATOR_LOGIN_FORM = "form[action*=\"login\"]";
     private const string LOCATOR_ERROR_VISIBLE = ".error:visible, .message.error:visible, [data-message-type=\"error\"]:visible";
-    private const string LOCATOR_EDIT_LINK = "a:has-text(\"Edit\"):not(:has-text(\"Edit Thread\")), button:has-text(\"Edit\"):not(:has-text(\"Edit Thread\")), a[data-action=\"edit\"]:not(:has-text(\"Edit Thread\"))";
+    private const string LOCATOR_EDIT_LINK = ".footer-actions a:has-text(\"Edit\")";
     private const string LOCATOR_EDITOR_TEXTAREA = "#compose-container > div:nth-child(2) > div.row > div > div > div.form-group > textarea"; // May need adjustment
     private const string LOCATOR_FORM_TEXTAREA = "textarea.form-text.form-control";
     private const string LOCATOR_SAVE_BUTTON = "button.btn-primary.bk:has-text(\"Save Edit\")";
@@ -132,13 +132,13 @@ public class PlaywrightService : IAsyncDisposable
             _logger.LogInformation("Navigating to forum thread: {TargetUrl} (Attempt {Attempt})", targetUrl, attempt);
             try
             {
-                await _page.GotoAsync(targetUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+                await _page.GotoAsync(targetUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
 
                 var permissionErrorLocator = _page.Locator(LOCATOR_ALERT_DANGER)
-                    .Filter(new LocatorFilterOptions { HasTextString = "Error loading data: You do not have permission to view this" });
+                    .Filter(new LocatorFilterOptions { HasTextString = "You do not have permission to view this" });
 
                 _logger.LogDebug("Checking for permission error element visibility...");
-                bool needsLogin = await WaitForVisibleAsync(permissionErrorLocator, timeout: 10000, shouldThrow: false);
+                bool needsLogin = await WaitForVisibleAsync(permissionErrorLocator, timeout: 5000, shouldThrow: false);
 
                 if (needsLogin)
                 {
@@ -146,7 +146,7 @@ public class PlaywrightService : IAsyncDisposable
                     await PerformLoginAsync();
 
                     _logger.LogInformation("Re-navigating to target URL after login: {TargetUrl}", targetUrl);
-                    await _page.GotoAsync(targetUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+                    await _page.GotoAsync(targetUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
 
                     // Verify login by checking for permission error again (quick check)
                     bool permissionErrorAfterLogin = await WaitForVisibleAsync(permissionErrorLocator, timeout: 5000, shouldThrow: false);
@@ -219,7 +219,7 @@ public class PlaywrightService : IAsyncDisposable
 
             // Optional: Check for permission error right after login
             var permissionErrorLocator = _page.Locator(LOCATOR_ALERT_DANGER)
-                    .Filter(new LocatorFilterOptions { HasTextString = "Error loading data: You do not have permission to view this" });
+                    .Filter(new LocatorFilterOptions { HasTextString = "You do not have permission to view this" });
             if(await WaitForVisibleAsync(permissionErrorLocator, 2000, false))
             {
                 _logger.LogError("Permission error still present after login. Login failed.");

@@ -348,7 +348,7 @@ public class RosterBotWorker : BackgroundService
             if (_playwrightService.IsPageAvailable || ex is PlaywrightException || (ex.Message?.Contains("Playwright", StringComparison.OrdinalIgnoreCase) ?? false))
             {
                 isFatalPlaywrightError = true;
-                await _playwrightService.TakeScreenshotAsync("-error");
+                await _playwrightService.TakeScreenshotAsync("error-screenshot.png");
             }
 
             var firstMessage = messagesToProcess.FirstOrDefault();

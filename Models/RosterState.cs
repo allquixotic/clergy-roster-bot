@@ -70,12 +70,21 @@ namespace ClergyRosterBot.Models
             // --- Find the roster tables using XPath ---
             // Adjust XPath if table structure is different or more specific selectors are needed
             // This XPath looks for tables that have a <tr> with valign=top, and that tr has at least 4 <td> children
+
+            // Debug: Check what HtmlAgilityPack is finding
+            var allTables = _htmlDoc.DocumentNode.SelectNodes("//table");
+            _logger?.LogDebug("Total <table> elements found: {Count}", allTables?.Count ?? 0);
+
+            var tablesWithTr = _htmlDoc.DocumentNode.SelectNodes("//table[.//tr[@valign='top']]");
+            _logger?.LogDebug("Tables with <tr valign='top'>: {Count}", tablesWithTr?.Count ?? 0);
+
             var tableNodes = _htmlDoc.DocumentNode.SelectNodes("//table[.//tr[@valign='top'] and count(.//tr[@valign='top'][1]/td) >= 4]");
 
             if (tableNodes == null || tableNodes.Count < 2)
             {
                 var count = tableNodes?.Count ?? 0;
                 _logger?.LogError("Could not find the expected 2 roster tables using XPath. Found: {Count}", count);
+                _logger?.LogDebug("Document HTML (first 500 chars): {Html}", _htmlDoc.DocumentNode.OuterHtml.Substring(0, Math.Min(500, _htmlDoc.DocumentNode.OuterHtml.Length)));
                 throw new FormatException($"Could not find the expected 2 roster tables in the HTML. Found: {count}");
             }
 
