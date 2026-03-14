@@ -25,8 +25,8 @@ public class PlaywrightService : IAsyncDisposable
     private const string LOCATOR_LOGIN_FORM = "form[action*=\"login\"]";
     private const string LOCATOR_ERROR_VISIBLE = ".error:visible, .message.error:visible, [data-message-type=\"error\"]:visible";
     private const string LOCATOR_EDIT_LINK = ".footer-actions a:has-text(\"Edit\")";
-    private const string LOCATOR_EDITOR_TEXTAREA = "#compose-container > div:nth-child(2) > div.row > div > div > div.form-group > textarea"; // May need adjustment
-    private const string LOCATOR_FORM_TEXTAREA = "textarea.form-text.form-control";
+    private const string LOCATOR_EDITOR_TEXTAREA = "#compose-container textarea.form-control"; // Updated for new Guildtag layout
+    private const string LOCATOR_FORM_TEXTAREA = "#compose-container textarea.form-control"; // Updated for new Guildtag layout
     private const string LOCATOR_SAVE_BUTTON = "button.btn-primary.bk:has-text(\"Save Edit\")";
     private const string LOCATOR_INPUT_AFTER_LABEL = " + input, input"; // Complex, review
 

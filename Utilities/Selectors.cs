@@ -24,8 +24,8 @@ public static partial class Selectors
     public const string EditLink = "a:has-text(\"Edit\"):not(:has-text(\"Edit Thread\")), button:has-text(\"Edit\"):not(:has-text(\"Edit Thread\")), a[data-action=\"edit\"]:not(:has-text(\"Edit Thread\"))";
     // These editor selectors might be fragile and depend heavily on the specific forum software's structure.
     // Consider making them configurable if possible.
-    public const string EditorTextarea = "#compose-container > div:nth-child(2) > div.row > div > div > div.form-group > textarea";
-    public const string FormTextarea = "textarea.form-text.form-control"; // Often same as EditorTextarea, but check
+    public const string EditorTextarea = "#compose-container textarea.form-control";
+    public const string FormTextarea = "#compose-container textarea.form-control";
     public const string SaveButton = "button.btn-primary.bk:has-text(\"Save Edit\")";
 
     // Pre-compiled Regex
