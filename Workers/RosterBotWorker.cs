@@ -281,7 +281,7 @@ public class RosterBotWorker : BackgroundService
 
             if (instructionsToApply.Any())
             {
-                originalHtml = await _playwrightService.GetForumPostContentAndOpenEditorAsync();
+                originalHtml = await _playwrightService.ReadForumPostAsync();
                 originalFile = await _playwrightService.SaveContentToFileAsync(originalHtml, "-original");
 
                 using var scope = _serviceProvider.CreateScope();

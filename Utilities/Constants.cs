@@ -51,9 +51,9 @@ public static partial class Constants
     [GeneratedRegex(@"\bPromoted\s+to\s+Curate\s+of\s+(\S+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex GeneratePromotedCurateRegex();
 
-    [GeneratedRegex(@"^\s*(?:Beginning|Starting)\s+Curate\s+Quest(?:\s+for\s+\S+)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    [GeneratedRegex(@"^\s*(?:.+?\s+[-–—:]\s+)?(?:Beginning|Starting|Started)\s+Curate\s+Quest(?:\s+for\s+\S+)?(?:\s+(?:on\s+)?\(?\d{1,2}/\d{1,2}(?:/\d{2,4})?\)?)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex GenerateQuestStartRegex();
 
     [GeneratedRegex(@"^\s*(?:Completing|Finishing|Finished|Completed)\s+Curate\s+Quest(?:\s+for\s+\S+)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex GenerateCurateQuestFinishRegex();
-} 
+}

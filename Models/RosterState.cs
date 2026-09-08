@@ -855,6 +855,9 @@ namespace ClergyRosterBot.Models
              }
              _logger?.LogDebug("Updating DOM cell for Divine {DivineName}", divineNameForDebug);
 
+             // Preserve untouched rank contents, including blank priest slots and styled names.
+             var originalData = ParseDivineCellData(cellNode);
+
              // Find rank headers: <span><u>RankName</u></span>
              var rankHeaderNodes = cellNode.SelectNodes(".//span/u/.."); // Select the parent span
              if (rankHeaderNodes == null) {
@@ -879,6 +882,9 @@ namespace ClergyRosterBot.Models
                      _logger?.LogWarning("Rank {RankName} found in HTML cell but not in processed data for {DivineName}.", rankName, divineNameForDebug);
                      names = new List<string>(); // Assume empty list if data missing
                  }
+
+                 if (originalData.TryGetValue(rankName, out var originalNames) && originalNames.SequenceEqual(names))
+                     continue;
 
                  // --- Remove old content nodes between this header and next ---
                  var nodesToRemove = new List<HtmlNode>();
@@ -967,4 +973,4 @@ namespace ClergyRosterBot.Models
          }
 
     }
-} 
+}

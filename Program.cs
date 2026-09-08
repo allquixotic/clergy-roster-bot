@@ -19,6 +19,7 @@ builder.Services.AddOptions<BotSettings>()
         settings.GuildtagForumUrl = Environment.GetEnvironmentVariable("GUILDTAG_FORUM_URL") ?? throw new InvalidOperationException("GUILDTAG_FORUM_URL is not set.");
         settings.GuildtagEmail = Environment.GetEnvironmentVariable("GUILDTAG_EMAIL") ?? throw new InvalidOperationException("GUILDTAG_EMAIL is not set.");
         settings.GuildtagPassword = Environment.GetEnvironmentVariable("GUILDTAG_PASSWORD") ?? throw new InvalidOperationException("GUILDTAG_PASSWORD is not set.");
+        settings.BackupsDirectory = Environment.GetEnvironmentVariable("BACKUPS_DIRECTORY") ?? "clergy-roster-backups";
         // Optional: Suppress error feedback (replies/reactions) if env var is "1"
         settings.SuppressErrorFeedback = Environment.GetEnvironmentVariable("SUPPRESS_ERROR_FEEDBACK") == "1";
     })
@@ -42,15 +43,26 @@ try
 {
     // This command installs the default browser (Chromium) if not present.
     // It needs to be run once, typically after deployment or first run.
-    Microsoft.Playwright.Program.Main(new[] { "install" });
+    var exitCode = Microsoft.Playwright.Program.Main(new[] { "install", "chromium" });
+    if (exitCode != 0) throw new InvalidOperationException($"Playwright Chromium installation failed (exit {exitCode}).");
     logger.LogInformation("Playwright browser check/install complete.");
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "Failed to run Playwright install command. The bot might not work correctly.");
-    // Optionally exit if playwright is critical and install failed
-    // return 1;
+    logger.LogError(ex, "Failed to install Playwright Chromium. Startup stopped.");
+    throw;
 }
 
+// Read-only diagnostic: no hosted services, Discord connection, replay, or forum writes.
+if (args.Contains("--check-forum", StringComparer.Ordinal))
+{
+    await using var forum = host.Services.GetRequiredService<PlaywrightService>();
+    var source = await forum.ReadForumPostAsync();
+    var roster = new RosterState(Microsoft.Extensions.Logging.Abstractions.NullLogger<RosterState>.Instance);
+    roster.ParseFromHtml(source);
+    var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(source)));
+    logger.LogInformation("Forum check passed: editable roster, {Length} source characters, SHA256 {Digest}. No writes performed.", source.Length, digest);
+    return;
+}
 
-await host.RunAsync(); 
+await host.RunAsync();
