@@ -94,7 +94,7 @@ public class PlaywrightService : IAsyncDisposable
             if (DateTimeOffset.UtcNow >= deadline)
                 throw new InvalidOperationException("GuildTag account login controls did not appear. Check site availability and the configured domain.");
             var toggle = _page.Locator("button:visible, a:visible").Filter(new() {
-                HasTextRegex = new Regex(@"^(?:Login with (?:your )?)?Guildtag Account$", RegexOptions.IgnoreCase)
+                HasTextRegex = new Regex(@"^\s*(?:Login with (?:your )?)?Guildtag Account\s*$", RegexOptions.IgnoreCase)
             }).First;
             if (DateTimeOffset.UtcNow >= nextToggle && await toggle.IsVisibleAsync())
             {

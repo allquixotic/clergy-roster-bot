@@ -45,7 +45,9 @@ sealed class GuildTagFixture : IAsyncDisposable
                 string? html = null;
                 if (path == "/login")
                     html = LoggedIn ? "<a href='/logout'>Logout</a>" : """
-                        <button onclick="document.querySelector('form').hidden=false">Login with your Guildtag Account</button>
+                        <button onclick="document.querySelector('form').hidden=false">
+                          Login with your Guildtag Account
+                        </button>
                         <form hidden method='post' action='/session'>
                         <input type='email' name='email'><input type='password' name='password'><button>Login</button></form>
                         """;

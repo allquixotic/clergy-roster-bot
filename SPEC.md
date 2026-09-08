@@ -18,7 +18,7 @@ Apply Discord clergy commands to configured GuildTag roster; preserve unrelated 
 
 ## §V
 
-- V1: Roster reads require matching thread identity, view permission, one first post, edit permission, and nonempty source. Missing error banner never proves access. Expired sessions reauthenticate.
+- V1: Roster reads require matching thread identity, view permission, one first post, edit permission, and nonempty source. Missing error banner never proves access. Expired sessions reauthenticate. Native login controls tolerate surrounding layout whitespace.
 - V2: Before edit, reread source and reject intervening changes; require local backup. After one POST, verify exact source and post identity through fresh reads before success. Failed or uncertain saves never count as success without read-back.
 - V3: Named, dated Curate quest-start announcements are ignored; actual rank assignments remain actionable.
 - V4: GuildTag navigation and API calls are paced; reads honor bounded Retry-After retries; uncertain writes are never blindly repeated.
@@ -41,3 +41,4 @@ B2|2026-09-08|SPA URL predicate could report save success before persistence; ti
 B3|2026-09-08|Quest-start regex rejected character prefixes, Started, and dates|V3
 B4|2026-09-08|Unpaced navigation/API reads encountered GuildTag HTTP 429 during diagnosis|V4
 B5|2026-09-08|Regeneration replaced untouched blank priest slot with Vacant during recovery preview|V5; preserve unchanged rank DOM
+B6|2026-09-08|Live login toggle included leading whitespace; anchored text selector matched only synthetic unpadded control|V1; padded-control regression
